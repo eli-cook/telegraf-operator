@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,6 +31,9 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
@@ -139,6 +143,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{},
+	)
+	config, err := kubeconfig.ClientConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	sidecar := &sidecarHandler{
 		ClassDataHandler:            classData,
 		Logger:                      logger,
@@ -158,6 +176,7 @@ func main() {
 		IstioRequestsMemory:         istioTelegrafRequestsMemory,
 		IstioLimitsCPU:              istioTelegrafLimitsCPU,
 		IstioLimitsMemory:           istioTelegrafLimitsMemory,
+		ConfigmapGetter:             NewConfigMapGetter(kubeClient),
 	}
 
 	err = sidecar.validateRequestsAndLimits()

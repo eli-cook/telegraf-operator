@@ -77,6 +77,14 @@ func (m *mockClassDataHandler) getData(className string) (string, error) {
 	}
 }
 
+type MockConfigMapGetter struct {
+	configMaps map[string]*corev1.ConfigMap
+}
+
+func (m *MockConfigMapGetter) Get(namespace string, name string) (*corev1.ConfigMap, error) {
+	return m.configMaps[name], nil
+}
+
 func Test_skip(t *testing.T) {
 	handler := &sidecarHandler{
 		RequestsCPU:    defaultRequestsCPU,
@@ -381,9 +389,37 @@ func Test_assembleConf(t *testing.T) {
   foo = "bar"
   a = "b"`,
 		},
+		{
+			name: "using configmap as input",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						TelegrafConfigMap: "my-config",
+					},
+				},
+			},
+			wantConfig: `
+[[inputs.prometheus]]
+  urls = ["http://127.0.0.1:6060/metrics"]
+  
+  
+
+`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+
+			configmap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-config",
+					Namespace: "mynamespace",
+				},
+				Data: map[string]string{
+					"telegraf.influxdata.com/port": "6060",
+					"telegraf.influxdata.com/path": "/metrics",
+				},
+			}
 
 			handler := &sidecarHandler{
 				ClassDataHandler:            newMockClassDataHandler(map[string]string{"class": tt.classData}),
@@ -393,6 +429,7 @@ func Test_assembleConf(t *testing.T) {
 				LimitsCPU:                   defaultLimitsCPU,
 				LimitsMemory:                defaultLimitsMemory,
 				Logger:                      testr.New(t),
+				ConfigmapGetter:             &MockConfigMapGetter{configMaps: map[string]*corev1.ConfigMap{"my-config": configmap}},
 			}
 			gotConfig, err := handler.assembleConf(tt.pod, "class")
 			if (err != nil) != tt.wantErr {
@@ -1640,7 +1677,7 @@ func Test_ports(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ports(tt.pod); !reflect.DeepEqual(got, tt.want) {
+			if got := ports(tt.pod.Annotations); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("ports() = %v, want %v", got, tt.want)
 			}
 		})

@@ -80,7 +80,10 @@ const (
 	IstioTelegrafLimitsMemory = "telegraf.influxdata.com/istio-limits-memory"
 	// TelegrafVolumeMounts allows specifying custom extra volumes to mount on telegraf sidecar, should be json formatted, eg: {"volumeName": "mountPath"}
 	TelegrafVolumeMounts = "telegraf.influxdata.com/volume-mounts"
-	telegrafSecretInfix  = "config"
+	// TelegrafConfigMap allows specifying a configmap to use for telegraf configuration
+	TelegrafConfigMap = "telegraf.influxdata.com/configmap"
+
+	telegrafSecretInfix = "config"
 
 	TelegrafSecretAnnotationKey   = "app.kubernetes.io/managed-by"
 	TelegrafSecretAnnotationValue = "telegraf-operator"
@@ -109,6 +112,7 @@ type sidecarHandler struct {
 	IstioOutputClass            string
 	IstioTelegrafImage          string
 	IstioTelegrafWatchConfig    string
+	ConfigmapGetter             ConfigMapGetter
 }
 
 type sidecarHandlerResponse struct {
@@ -244,30 +248,52 @@ func (h *sidecarHandler) getClassData(className string) (string, error) {
 
 // Assembling telegraf configuration
 func (h *sidecarHandler) assembleConf(pod *corev1.Pod, className string) (telegrafConf string, err error) {
+	// Create a local map of key-value pairs
+	configData := make(map[string]string)
+
+	// Check if the new annotation is present
+	if configMapName, ok := pod.Annotations["telegraf.influxdata.com/configmap"]; ok {
+		// Fetch the ConfigMap and use its data
+		configMap, err := h.ConfigmapGetter.Get(pod.Namespace, configMapName)
+		if err != nil {
+			return "", fmt.Errorf("unable to fetch ConfigMap %s: %v", configMapName, err)
+		}
+
+		for key, value := range configMap.Data {
+			configData[key] = value
+		}
+		fmt.Println(configData)
+	} else {
+		// If the ConfigMap is not present, use the pod's annotations
+		for key, value := range pod.Annotations {
+			configData[key] = value
+		}
+	}
+
 	classData, err := h.ClassDataHandler.getData(className)
 	if err != nil {
 		return "", newNonFatalError(err, "telegraf-operator could not create sidecar container for unknown class")
 	}
 
-	ports := ports(pod)
+	ports := ports(configData)
 	if len(ports) != 0 {
 		path := "/metrics"
-		if extPath, ok := pod.Annotations[TelegrafMetricsPath]; ok {
+		if extPath, ok := configData[TelegrafMetricsPath]; ok {
 			path = extPath
 		}
 		scheme := "http"
-		if extScheme, ok := pod.Annotations[TelegrafMetricsScheme]; ok {
+		if extScheme, ok := configData[TelegrafMetricsScheme]; ok {
 			scheme = extScheme
 		}
 
 		additionalConfig := ""
 
-		intervalRaw, ok := pod.Annotations[TelegrafInterval]
+		intervalRaw, ok := configData[TelegrafInterval]
 		if ok {
 			additionalConfig = fmt.Sprintf("%s  interval = \"%s\"\n", additionalConfig, intervalRaw)
 		}
 
-		if versionRaw, ok := pod.Annotations[TelegrafMetricVersion]; ok {
+		if versionRaw, ok := configData[TelegrafMetricVersion]; ok {
 			version, err := strconv.ParseInt(versionRaw, 10, 0)
 			if err != nil {
 				return "", fmt.Errorf("value supplied for %s must be a number, %s given", TelegrafMetricVersion, versionRaw)
@@ -276,7 +302,7 @@ func (h *sidecarHandler) assembleConf(pod *corev1.Pod, className string) (telegr
 			additionalConfig = fmt.Sprintf("%s  metric_version = %d\n", additionalConfig, version)
 		}
 
-		if namepass, ok := pod.Annotations[TelegrafMetricsNamepass]; ok {
+		if namepass, ok := configData[TelegrafMetricsNamepass]; ok {
 			additionalConfig = fmt.Sprintf("%s  namepass = %s\n", additionalConfig, namepass)
 		}
 
@@ -288,7 +314,7 @@ func (h *sidecarHandler) assembleConf(pod *corev1.Pod, className string) (telegr
 		telegrafConf = fmt.Sprintf("%s\n[[inputs.prometheus]]\n  urls = [\"%s\"]\n%s\n", telegrafConf, strings.Join(urls, `", "`), additionalConfig)
 	}
 	enableInternal := h.EnableDefaultInternalPlugin
-	if internalRaw, ok := pod.Annotations[TelegrafEnableInternal]; ok {
+	if internalRaw, ok := configData[TelegrafEnableInternal]; ok {
 		internal, err := strconv.ParseBool(internalRaw)
 		if err != nil {
 			internal = false
@@ -300,14 +326,14 @@ func (h *sidecarHandler) assembleConf(pod *corev1.Pod, className string) (telegr
 	if enableInternal {
 		telegrafConf = fmt.Sprintf("%s\n%s", telegrafConf, fmt.Sprintf("[[inputs.internal]]\n"))
 	}
-	if inputsRaw, ok := pod.Annotations[TelegrafRawInput]; ok {
+	if inputsRaw, ok := configData[TelegrafRawInput]; ok {
 		telegrafConf = fmt.Sprintf("%s\n%s", telegrafConf, inputsRaw)
 	}
 	telegrafConf = fmt.Sprintf("%s\n%s", telegrafConf, classData)
 
 	type keyValue struct{ key, value string }
 	var globalTags []keyValue
-	for key, value := range pod.Annotations {
+	for key, value := range configData {
 		if strings.HasPrefix(key, TelegrafGlobalTagLiteralPrefix) {
 			globalTags = append(globalTags, keyValue{strings.TrimPrefix(key, TelegrafGlobalTagLiteralPrefix), value})
 		}
@@ -678,12 +704,12 @@ func (h *sidecarHandler) newIstioContainer(pod *corev1.Pod, containerName string
 }
 
 // ports gathers and merges unique ports from both TelegrafMetricsPort and TelegrafMetricsPorts.
-func ports(pod *corev1.Pod) []string {
+func ports(configData map[string]string) []string {
 	uniquePorts := map[string]struct{}{}
-	if p, ok := pod.Annotations[TelegrafMetricsPort]; ok {
+	if p, ok := configData[TelegrafMetricsPort]; ok {
 		uniquePorts[p] = struct{}{}
 	}
-	if ports, ok := pod.Annotations[TelegrafMetricsPorts]; ok {
+	if ports, ok := configData[TelegrafMetricsPorts]; ok {
 		for _, p := range strings.Split(ports, ",") {
 			uniquePorts[p] = struct{}{}
 		}
