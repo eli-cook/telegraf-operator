@@ -10,7 +10,7 @@ RUN go mod download
 
 # Copy the go source, build script and run it
 # NOTE: please ensure that file list to copy is synced with Dockerfile.multi-arch
-COPY main.go sidecar.go handler.go class_data.go errors.go watcher.go updater.go ./
+COPY main.go sidecar.go handler.go class_data.go errors.go watcher.go updater.go configmap_getter.go ./
 COPY scripts/build-manager.sh /build-manager.sh
 RUN /build-manager.sh
 
