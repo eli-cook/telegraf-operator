@@ -252,7 +252,7 @@ func (h *sidecarHandler) assembleConf(pod *corev1.Pod, className string) (telegr
 	configData := make(map[string]string)
 
 	// Check if the new annotation is present
-	if configMapName, ok := pod.Annotations["telegraf.influxdata.com/configmap"]; ok {
+	if configMapName, ok := pod.Annotations[TelegrafConfigMap]; ok {
 		// Fetch the ConfigMap and use its data
 		configMap, err := h.ConfigmapGetter.Get(pod.Namespace, configMapName)
 		if err != nil {
