@@ -416,8 +416,8 @@ func Test_assembleConf(t *testing.T) {
 					Namespace: "mynamespace",
 				},
 				Data: map[string]string{
-					"telegraf.influxdata.com/port": "6060",
-					"telegraf.influxdata.com/path": "/metrics",
+					"port": "6060",
+					"path": "/metrics",
 				},
 			}
 

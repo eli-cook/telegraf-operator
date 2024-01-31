@@ -260,9 +260,9 @@ func (h *sidecarHandler) assembleConf(pod *corev1.Pod, className string) (telegr
 		}
 
 		for key, value := range configMap.Data {
-			configData[key] = value
+			// convert the ConfigMap data to the format expected by the telegraf config
+			configData[fmt.Sprintf("%s/%s", TelegrafAnnotationCommon, key)] = value
 		}
-		fmt.Println(configData)
 	} else {
 		// If the ConfigMap is not present, use the pod's annotations
 		for key, value := range pod.Annotations {
