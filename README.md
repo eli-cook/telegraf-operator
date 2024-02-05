@@ -221,8 +221,8 @@ And additionally here is an example of the configmap:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: test-app-telegraf-annotations
-  namespace: telegraf-operator
+  name: my-configmap
+  namespace: default # same namespace as the app deployment
 data:
   port: "2112"
   scheme: "http"
