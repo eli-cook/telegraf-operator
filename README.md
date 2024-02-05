@@ -192,6 +192,47 @@ If deploying telegraf-operator in a different way, `telegraf-operator` should be
 
 ## Pod-level annotations
 
+### ConfigMap Support for Configuration Settings
+
+This fork of the operator supports using a ConfigMap for defining configuration settings. This feature simplifies the configuration process by allowing you to define all your settings in one place, instead of using multiple pod-level annotations.
+
+To use this feature, you need to set the pod-level annotation `telegraf.influxdata.com/configmap` with the name of your ConfigMap.
+
+Here's an example:
+```
+apiVersion: apps/v1
+kind: StatefulSet
+  # ...
+spec:
+  template:
+    metadata:
+      annotations:
+        telegraf.influxdata.com/class: influxdb # User defined output class
+        telegraf.influxdata.com/configmap: my-configmap
+      # ...
+    spec:
+      containers:
+      - name: influxdb
+        image: quay.io/influxdb/influxdb:v2.0.4
+```
+
+And additionally here is an example of the configmap:
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-app-telegraf-annotations
+  namespace: telegraf-operator
+data:
+  port: "2112"
+  scheme: "http"
+  path: "/metrics"
+  interval: "30s"
+  metric-version: "2"
+```
+Two things to note, first the configmap keys should only contain the annotation nouns, and not contain the common annotation prefix.
+Second, ConfigMap must be in the same namespace as your pod.
+
 Each pod (either standalone or as part of deployment as well as statefulset) may also specify how it should be monitored using metadata.
 
 The [redis.yml](examples/redis.yml) example adds annotation that enables the Redis plugin so that Telegraf will automatically retrieve metrics related to it.
